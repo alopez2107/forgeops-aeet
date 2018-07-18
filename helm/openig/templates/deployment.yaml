@@ -1,0 +1,75 @@
+# Copyright (c) 2016-2017 ForgeRock AS. Use of this source code is subject to the
+# Common Development and Distribution License (CDDL) that can be found in the LICENSE file
+kind: Deployment
+apiVersion: apps/v1beta1
+metadata:
+  # If you want to run more than one IG deployment in the same namespace, change the deployment name 
+  # below to the {{ template "fullname" . }} to make the name unique.
+  name:  {{ template "fullname" . }}
+  labels:
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    vendor: forgerock
+    component: {{ .Values.component }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  template:
+    metadata:
+      labels:
+        app: {{ template "name" . }}
+        release: {{ .Release.Name }}
+        component: {{ .Values.component }}
+        vendor: forgerock
+    spec:
+      initContainers:
+      - name: git-init
+        image: forgerock/git:6.0.0
+        imagePullPolicy:  {{ .Values.image.pullPolicy }}
+        volumeMounts:
+        - name: git
+          mountPath: /git
+        - name: git-secret
+          mountPath: /etc/git-secret
+        args: ["init"]
+        envFrom:
+        - configMapRef:
+            name:  {{ template "fullname" . }}
+        # This is here so that a change in the git branch or commit triggers a rollout.
+        # See https://github.com/kubernetes/helm/issues/2639
+        env:
+        - name: GIT_CHECKOUT_BRANCH
+          value: "{{ .Values.global.git.branch }}"
+      containers:
+      - name: {{ .Chart.Name }}
+        image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        envFrom:
+        - configMapRef:
+            name: {{ template "fullname" . }}
+        ports:
+        - containerPort: {{ .Values.service.internalPort }}
+        volumeMounts:
+        - name: git
+          mountPath: /git
+        - name: git-secret
+          mountPath: /etc/git-secret
+# todo: Create a health check URL
+#        livenessProbe:
+#          httpGet:
+#            path: /
+#            port: {{ .Values.service.internalPort }}
+#          timeoutSeconds: 10
+#        readinessProbe:
+#          httpGet:
+#            path: /
+#            port: {{ .Values.service.internalPort }}
+#          initialDelaySeconds: 30
+        resources:
+{{ toYaml .Values.resources | indent 12 }}
+      volumes:
+      - name: git
+        emptyDir: {}
+      - name: git-secret
+        secret:
+          secretName:  git-ssh-key
+          # The forgerock user needs to be able to read this file.
+          #defaultMode: 256

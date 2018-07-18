@@ -1,0 +1,85 @@
+# Default values for openidm.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# optional registry, including trailing /
+
+
+replicaCount: 1
+
+global:
+  domain: .example.com
+  git:
+    # git repo to clone. The value below is a public git repo that does not require authentication.
+    repo: "https://github.com/ForgeRock/forgeops-init.git"
+    branch: master
+  configPath:
+    idm: config/idm/sync-with-ldap-bidirectional
+
+image:
+  repository: forgerock-docker-public.bintray.io/forgerock/openidm
+  pullPolicy: IfNotPresent
+  tag: 6.0.0
+
+# TODO: We should get the idmuser / password values from the secret created in the etc/gke/prepsql chart.
+openidm:
+  repo:
+    host: localhost
+    port: 5432
+    user: openidm
+    password: openidm
+    schema: openidm
+    databaseName: openidm
+  # Optional client secret for AM/IDM integration:
+  idpconfig:
+    clientsecret: password
+
+# Optional - if there is a DJ userstore configured
+userstore:
+  host: userstore-0.userstore
+  password: password
+  port: 1389
+
+service:
+  name: openidm
+  type: NodePort
+  externalPort: 80
+  internalPort: 8080
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1024Mi
+  requests:
+    cpu: 300m
+    memory: 1024Mi
+
+
+# Used to form the FQDN  - see _helpers.tpl
+component: openidm
+
+# Default log level. See templates/configmap/logging.properties. For example, you can use FINE here to
+# see fine grained logging output using kubectl logs.
+logLevel: INFO
+
+ingress:
+  class: nginx
+  annotations:
+    # Nginx specific annotations
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+    nginx.ingress.kubernetes.io/session-cookie-name: "route"
+    nginx.ingress.kubernetes.io/session-cookie-hash: "sha1"
+
+# Command to run in the git sidecar container.
+git:
+  # pause will sleep so you can exec into the container and manually sync changes.
+  #command: pause
+  # syncloop will auto save and push changes every 5 minutes. Use this in development.
+  command: syncloop
+
+# Set this to true if you want to include a psql sidecar container in the pod for debugging purposes.
+debug: false
+
+# Cloud SQL connection name
+connectionName: "engineering-devops:us-central1:openidm1"
+

@@ -1,0 +1,60 @@
+# Copyright (c) 2016-2017 ForgeRock AS. Use of this source code is subject to the
+# Common Development and Distribution License (CDDL) that can be found in the LICENSE file
+#
+# Default values for OpenIG.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+replicaCount: 1
+
+
+global:
+  domain: .example.com
+  git:
+    # git repo to clone. The value below is a public git repo that does not require authentication.
+    repo: "https://github.com/ForgeRock/forgeops-init.git"
+    branch: master
+  configPath:
+    ig: default/ig/basic-sample
+  # If you set this to true, you must have a TLS secret with the same name as the FQDN
+  useTLS: false
+
+image:
+  repository: forgerock-docker-public.bintray.io/forgerock/openig
+  tag: 6.0.0
+  pullPolicy: IfNotPresent
+
+service:
+  name: openig
+  type: ClusterIP
+  externalPort: 80
+  internalPort: 8080
+
+resources:
+#  limits:
+#    cpu: 1000m
+#    memory: 1024Mi
+  requests:
+    cpu: 200m
+    memory: 512Mi
+
+
+# These are both used to form the FQDN for the load balancer.  See _helpers.tpl
+component: openig
+
+ingress:
+  class: nginx
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    # Do not use for nginx. TODO: Does warp need this?
+    #ingress.kubernetes.io/rewrite-target: /
+    ingress.kubernetes.io/enable-cors: "false"
+    ingress.kubernetes.io/affinity: "cookie"
+    ingress.kubernetes.io/session-cookie-name: "route"
+    ingress.kubernetes.io/session-cookie-hash: "sha1"
+    ingress.kubernetes.io/ssl-redirect: "true"
+    # Nginx specific annotations
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+    nginx.ingress.kubernetes.io/session-cookie-name: "route"
+    nginx.ingress.kubernetes.io/session-cookie-hash: "sha1"
+
+

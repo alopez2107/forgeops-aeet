@@ -1,0 +1,110 @@
+# Copyright (c) 2016-2017 ForgeRock AS.
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: {{ template "openam.fullname" . }}
+spec:
+  replicas: {{default 1 .Values.openamReplicaCount }}
+  template:
+    metadata:
+      labels:
+        app: {{ template "openam.name" . }}
+        component: {{ .Values.component }}
+        vendor: forgerock
+        release: {{ .Release.Name }}
+        heritage: {{ .Release.Service }}
+    spec:
+      terminationGracePeriodSeconds: 10
+      initContainers:
+      - name: git-init
+        image: forgerock/git:6.0.0
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        volumeMounts:
+        - name: git
+          mountPath: /git
+        - name: git-secret
+          mountPath: /etc/git-secret
+        args: ["init"]
+        envFrom:
+        - configMapRef:
+            name: am-configmap
+      - name: wait-for-configstore
+        image: "forgerock-docker-public.bintray.io/forgerock/util:6.0.0"
+        imagePullPolicy: "{{ .Values.image.pullPolicy }}"
+        args: [ "wait", "{{ .Values.configLdapHost }}", "{{ .Values.configLdapPort }}" ]
+      # todo: pull the util image scripts into a generic alpine image. Use a configmap for the scripts
+      - name: bootstrap
+        image: forgerock/util:6.0.0
+        imagePullPolicy:  {{ .Values.image.pullPolicy }}
+        env:
+        - name: BASE_DN
+          value: {{ .Values.rootSuffix }}
+        volumeMounts:
+        - name: openam-root
+          mountPath: /home/forgerock/openam
+        - name: openam-secrets
+          mountPath: /var/run/secrets/openam
+        - name: openam-boot
+          mountPath: /var/run/openam
+        - name: configstore-secret
+          mountPath: /var/run/secrets/configstore
+        args:  ["bootstrap"]
+      containers:
+      - name: openam
+        image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        imagePullPolicy:  {{ .Values.image.pullPolicy }}
+        ports:
+        - containerPort: 8080
+          name: http
+        volumeMounts:
+        - name: openam-root
+          mountPath: /home/forgerock/openam
+        - name: git
+          mountPath: /git
+        - name: git-secret
+          mountPath: /etc/git-secret
+        envFrom:
+        - configMapRef:
+            name: am-configmap
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        resources:
+{{ toYaml .Values.resources | indent 10 }}
+        # For slow environments like Minikube you need to give OpenAM time to come up.
+        readinessProbe:
+          httpGet:
+            path: /openam/isAlive.jsp
+            port: 8080
+          initialDelaySeconds: 30
+          timeoutSeconds: 5
+          periodSeconds: 20
+        livenessProbe:
+          httpGet:
+            path: /openam/isAlive.jsp
+            port: 8080
+          initialDelaySeconds: 60
+          timeoutSeconds: {{ .Values.livenessTimeout }}
+          periodSeconds: {{ .Values.livenessPeriod }}
+      volumes:
+      - name: openam-root
+        emptyDir: {}
+      - name: openam-secrets
+        secret:
+          secretName: openam-secrets
+      - name: openam-boot
+        configMap:
+          name: boot-json
+      - name: git
+        emptyDir: {}
+      - name: git-secret
+        secret:
+          secretName: git-ssh-key
+          # The forgerock user needs read access to this secret
+          #defaultMode: 256
+      - name: configstore-secret
+        secret:
+          secretName: configstore
+          #defaultMode: 256

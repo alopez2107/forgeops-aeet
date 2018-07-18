@@ -1,0 +1,97 @@
+# Copyright (c) 2016-2017 ForgeRock AS.
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: amster
+  labels:
+    name: amster
+    app: {{ template "fullname" . }}
+    vendor: forgerock
+    component: amster
+    release: {{ .Release.Name }}
+    app: {{ template "name" . }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    heritage: {{ .Release.Service }}
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: {{ template "fullname" . }}
+        component:  {{ .Values.component }}
+    spec:
+      terminationGracePeriodSeconds: 5
+      initContainers:
+      - name: git-init
+        image: forgerock/git:6.0.0
+        imagePullPolicy:  {{ .Values.image.pullPolicy }}
+        volumeMounts:
+        - name: git
+          mountPath: /git
+        - name: git-secret
+          mountPath: /etc/git-secret
+        args: ["init"]
+        envFrom:
+        - configMapRef:
+            name: amster-{{ .Release.Name }}
+        # This is here so that a change in the git branch or commit triggers a rollout.
+        # See https://github.com/kubernetes/helm/issues/2639
+        env:
+        - name: GIT_CHECKOUT_BRANCH
+          value: "{{ .Values.global.git.branch }}"
+      containers:
+      - name: amster
+        image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        imagePullPolicy: {{  .Values.image.pullPolicy }}
+        envFrom:
+        - configMapRef:
+            name: amster-{{ .Release.Name }}
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        volumeMounts:
+        - name: git
+          mountPath: /git
+        # The ssh key for Amster authN
+        - name: amster-secrets
+          mountPath: /var/run/secrets/amster
+          readOnly: true
+        # The Amster scripts - not configuration.
+        - name: scripts
+          mountPath: /opt/amster/scripts
+        args: ["configure", "sync"]
+        resources:
+{{ toYaml .Values.resources | indent 12 }}
+      - name: git
+        image: forgerock/git:6.0.0
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        volumeMounts:
+        - name: git
+          mountPath: /git
+        - name: git-secret
+          mountPath: /etc/git-secret
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: COMPONENT
+          value:  {{ .Values.component }}
+        args: ["pause"]
+      volumes:
+      - name: amster-secrets
+        secret:
+          secretName: amster-secrets
+      - name: scripts
+        configMap:
+          name: amster-config
+      # the amster and git pods share access to this volume
+      - name: git
+        emptyDir: {}
+      - name: git-secret
+        secret:
+          secretName: git-ssh-key
+          # The forgerock user needs read access to this secret
+          #defaultMode: 256
